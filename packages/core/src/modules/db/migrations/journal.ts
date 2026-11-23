@@ -1,0 +1,28 @@
+import init from './0000_init_schema.sql' with { type: 'text' }
+import gateStatus from './0001_add_gate_status_and_indexes.sql' with {
+  type: 'text',
+}
+import gateSummary from './0002_add_gate_summary.sql' with { type: 'text' }
+import runQueue from './0003_add_run_queue_states.sql' with { type: 'text' }
+import runPolicy from './0004_add_policy_to_runs.sql' with { type: 'text' }
+
+export interface Migration {
+  readonly name: string
+  readonly sql: string
+}
+
+/**
+ * Migrations in application order, embedded rather than read from disk.
+ *
+ * drizzle-kit still generates the `.sql` files and they stay the source of
+ * truth, but the core ships as a single compiled binary with no directory to
+ * resolve against, so the contents are imported as text and travel inside it.
+ * A new migration is appended here in the same commit that generates it.
+ */
+export const MIGRATIONS: readonly Migration[] = [
+  { name: '0000_init_schema', sql: init },
+  { name: '0001_add_gate_status_and_indexes', sql: gateStatus },
+  { name: '0002_add_gate_summary', sql: gateSummary },
+  { name: '0003_add_run_queue_states', sql: runQueue },
+  { name: '0004_add_policy_to_runs', sql: runPolicy },
+]

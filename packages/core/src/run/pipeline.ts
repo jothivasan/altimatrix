@@ -1,0 +1,332 @@
+import type { Config } from '@/config'
+import { emit, registerRunRoot } from '@/events/bus'
+import type { GhIssue } from '@/lib/gh'
+import { logger } from '@/lib/log'
+import { getDb } from '@/modules/db/db'
+import { readRun } from '@/modules/runs/queue'
+import type { RunRef, Subject } from '@/modules/work/paths'
+import { recordBestEffort, recordRun, snapshotOf } from '@/run/artifacts'
+import { detectConventions } from '@/run/conventions'
+import { type Delivery, deliver, reportOutcomeOnIssue } from '@/run/deliver'
+import { dispatchIfAsked } from '@/run/dispatchRoute'
+import { driveIssueWork } from '@/run/machines/drive'
+import type { IssueWorkContext } from '@/run/machines/types'
+import {
+  announceStart,
+  type ResumeFrom,
+  snapshotFor,
+} from '@/run/pipeline.helpers'
+import { policyForRun } from '@/run/policy'
+import {
+  adoptWorkspace,
+  discardPath,
+  discardWorkspace,
+  prepareWorkspace,
+  type Workspace,
+} from '@/run/workspace'
+
+const log = logger('pipeline')
+
+export interface PipelineResult {
+  readonly status: 'delivered' | 'skipped' | 'failed'
+  readonly branch?: string
+  readonly prUrl?: string
+  readonly error?: string
+}
+
+/**
+ * Takes one issue from intake to a draft pull request, through four stations.
+ *
+ *   analyst    plans, writes the acceptance criteria, modifies nothing
+ *   implementer writes the code against that plan
+ *   reviewer   judges the committed diff from its own checkout
+ *   delivery   pushes and opens a draft, only on an approved verdict
+ *
+ * Every stage resolves to a `PipelineResult` rather than throwing, because the
+ * caller finalises the run's claim from that result: a rejection here would
+ * leave the issue claimed and unretryable until its lease expires.
+ */
+export type { ResumeFrom }
+
+/**
+ * Picks a run back up where a previous process left it.
+ *
+ * The same path as a fresh run with two differences: the worktree is adopted
+ * rather than rebuilt, because rebuilding it would throw away the commits this
+ * run is being resumed to keep, and the machine starts from its snapshot.
+ */
+export async function resumeIssue(
+  repo: string,
+  issue: GhIssue,
+  config: Config,
+  from: ResumeFrom,
+): Promise<PipelineResult> {
+  return await work(repo, issue, config, from)
+}
+
+/**
+ * What a triage that did not hand off means to the caller.
+ *
+ * None of these are failures: a question answered and a duplicate closed are
+ * the system working. `skipped` says the issue was dealt with and produced no
+ * pull request, which is what the run table already means by it.
+ */
+export async function runIssue(
+  repo: string,
+  issue: GhIssue,
+  config: Config,
+): Promise<PipelineResult> {
+  return await work(repo, issue, config, undefined)
+}
+
+async function work(
+  repo: string,
+  issue: GhIssue,
+  config: Config,
+  from: ResumeFrom | undefined,
+): Promise<PipelineResult> {
+  const runId = from?.runId ?? `${repo}#${issue.number}@${Date.now()}`
+  const subject: Subject = { repo, kind: 'issue', number: issue.number }
+  // Resolved once, here, rather than read again inside each station: a person
+  // changing the repository's policy mid run must not move the run underneath
+  // the machine that is already going by it.
+  const policy = policyForRun(
+    config,
+    repo,
+    readRun(getDb().sqlite, repo, 'issue', issue.number)?.policy,
+  )
+  const run: RunRef = { subject, runId }
+  announceStart(runId, repo, issue)
+
+  let workspace: Workspace
+  try {
+    workspace = await openWorkspace(repo, issue, from !== undefined)
+  } catch (error) {
+    return await reportWorkspaceFailure(runId, repo, issue, run, error)
+  }
+
+  let reviewWorktree: string | null = null
+  let result: PipelineResult = { status: 'failed', error: 'run did not finish' }
+
+  try {
+    // From here on every event is redacted against this worktree before it
+    // leaves the bus.
+    registerRunRoot(runId, workspace.worktreePath)
+
+    const conventionFiles = await detectConventions(workspace.worktreePath)
+    log.info('conventions detected', {
+      files: conventionFiles.length === 0 ? 'none' : conventionFiles.join(','),
+    })
+    emit({
+      type: 'workspace.ready',
+      runId,
+      branch: workspace.branch,
+      base: workspace.base,
+      conventions: conventionFiles,
+      at: Date.now(),
+    })
+    // Triage first, when the repository asks for it. A question, a duplicate or
+    // a security report ends here and never reaches a station that writes code,
+    // which is the whole point of classifying before considering the work.
+    const triaged = await dispatchIfAsked({
+      runId,
+      repo,
+      issue,
+      run,
+      config,
+      policy,
+      workspace,
+      conventionFiles,
+      ...snapshotFor(from, 'triage'),
+    })
+    if (triaged !== undefined) {
+      result = triaged
+      return result
+    }
+
+    const settled = await driveIssueWork({
+      runId,
+      repo,
+      issueNumber: issue.number,
+      run,
+      policy,
+      ...snapshotFor(from, 'issueWork'),
+      deps: {
+        db: getDb().sqlite,
+        config,
+        issue,
+        repo,
+        workspace,
+        run,
+        conventionFiles,
+      },
+    })
+    reviewWorktree = settled.context.reviewWorktree ?? null
+
+    const { analysis, review } = settled.context
+    if (
+      settled.state !== 'approved' ||
+      analysis === undefined ||
+      review === undefined
+    ) {
+      result = await reportUnapproved(runId, repo, issue, settled.context)
+      return result
+    }
+
+    emit({ type: 'stage.entered', runId, stage: 'deliver', at: Date.now() })
+
+    const delivery: Delivery = await deliver({
+      workspace,
+      issue,
+      analysis,
+      review,
+      report: settled.context.implementerReport,
+      config,
+    })
+    await reportOutcomeOnIssue(repo, issue, delivery)
+    result = announceDelivery(runId, delivery)
+    return result
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    log.error('run failed', { repo, issue: issue.number, error: message })
+    emit({ type: 'run.failed', runId, error: message, at: Date.now() })
+    result = { status: 'failed', error: message }
+    return result
+  } finally {
+    await recordBestEffort('run', () =>
+      recordRun(run, snapshotOf(runId, repo, issue.number, result)),
+    )
+    await tidyUp({
+      workspace,
+      reviewWorktree,
+      // Keyed on failure rather than on delivery. A triage that answered a
+      // question or closed a duplicate never delivers a pull request and is
+      // still a complete success, and keeping its checkout would leak one per
+      // issue the factory ever declined to work on.
+      keep: result.status === 'failed' && config.keepWorktreeOnFailure,
+    })
+  }
+}
+
+/**
+ * Puts the checkouts back.
+ *
+ * `keepWorktreeOnFailure` is exactly that: a successful run always cleans up,
+ * or every delivered issue leaves a checkout and a branch behind.
+ */
+async function tidyUp(input: {
+  workspace: Workspace
+  reviewWorktree: string | null
+  keep: boolean
+}): Promise<void> {
+  if (input.reviewWorktree !== null) {
+    await discardPath(input.workspace, input.reviewWorktree)
+  }
+  if (!input.keep) {
+    await discardWorkspace(input.workspace)
+  }
+}
+
+/** Turns what delivery did into the run's result, and says so on the bus. */
+function announceDelivery(runId: string, delivery: Delivery): PipelineResult {
+  if (!delivery.delivered) {
+    emit({
+      type: 'run.stopped',
+      runId,
+      reason: delivery.reason,
+      at: Date.now(),
+    })
+    return { status: 'skipped', error: delivery.reason }
+  }
+  emit({
+    type: 'run.delivered',
+    runId,
+    prUrl: delivery.prUrl,
+    branch: delivery.branch,
+    at: Date.now(),
+  })
+  return {
+    status: 'delivered',
+    branch: delivery.branch,
+    prUrl: delivery.prUrl,
+  }
+}
+
+/**
+ * A run that never got a worktree.
+ *
+ * This path returns before the try whose finally records the run, so the
+ * snapshot is written here instead: a run that failed this early is still a
+ * run, and its outcome is the only thing left of it.
+ */
+async function reportWorkspaceFailure(
+  runId: string,
+  repo: string,
+  issue: GhIssue,
+  run: RunRef,
+  error: unknown,
+): Promise<PipelineResult> {
+  const message = error instanceof Error ? error.message : String(error)
+  log.error('workspace setup failed', {
+    repo,
+    issue: issue.number,
+    error: message,
+  })
+  const failed: PipelineResult = {
+    status: 'failed',
+    error: `workspace setup failed: ${message}`,
+  }
+  emit({ type: 'run.failed', runId, error: failed.error ?? '', at: Date.now() })
+  await recordBestEffort('run', () =>
+    recordRun(run, snapshotOf(runId, repo, issue.number, failed)),
+  )
+  return failed
+}
+
+/**
+ * The worktree a run works in.
+ *
+ * Adopted when resuming and built fresh otherwise. A rebuilt worktree is a
+ * clean one, which is the whole point for a new run and the exact opposite of
+ * what a resumed one needs: it would throw away the commits the run is being
+ * resumed to keep. Adoption returning nothing means there is nothing to keep,
+ * so the run starts over rather than refusing to run.
+ */
+async function openWorkspace(
+  repo: string,
+  issue: GhIssue,
+  resuming: boolean,
+): Promise<Workspace> {
+  const adopted = resuming
+    ? await adoptWorkspace(repo, issue.number, issue.title)
+    : undefined
+  return adopted ?? (await prepareWorkspace(repo, issue.number, issue.title))
+}
+
+/**
+ * A run the machine did not carry to an approved verdict.
+ *
+ * A failure is the factory's own problem and is not reported on the issue; a
+ * stop is a decision somebody asked for, and is.
+ */
+async function reportUnapproved(
+  runId: string,
+  repo: string,
+  issue: GhIssue,
+  context: IssueWorkContext,
+): Promise<PipelineResult> {
+  const stopped = context.outcome ?? {
+    kind: 'stopped' as const,
+    reason: 'the run ended without an outcome',
+  }
+  if (stopped.kind === 'failed') {
+    emit({ type: 'run.failed', runId, error: stopped.error, at: Date.now() })
+    return { status: 'failed', error: stopped.error }
+  }
+  emit({ type: 'run.stopped', runId, reason: stopped.reason, at: Date.now() })
+  await reportOutcomeOnIssue(repo, issue, {
+    delivered: false,
+    reason: stopped.reason,
+  })
+  return { status: 'skipped', error: stopped.reason }
+}

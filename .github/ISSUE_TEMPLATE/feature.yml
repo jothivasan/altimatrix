@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a change to an Altimatrix workflow.
+body:
+  - type: markdown
+    attributes:
+      value: "For a security finding, follow SECURITY.md. Remove tokens and private repository content from examples."
+  - type: textarea
+    id: problem
+    attributes:
+      label: "What maintainer task is difficult today?"
+      description: "Describe the current workflow and who is affected."
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: "Desired outcome"
+      description: "Give an example of what a successful change would allow."
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: "Alternatives and trade-offs"
+      description: "Mention existing workarounds and effects on approvals or GitHub access."
+    validations:
+      required: false

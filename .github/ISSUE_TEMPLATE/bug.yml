@@ -1,0 +1,27 @@
+name: Bug report
+description: Report a reproducible problem in the factory, CLI or dashboard.
+body:
+  - type: markdown
+    attributes:
+      value: "For a security finding, follow SECURITY.md. Remove tokens and private repository content from examples."
+  - type: textarea
+    id: environment
+    attributes:
+      label: "Environment"
+      description: "Provide the OS, Bun version, package version or commit, and how you launched the factory."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce"
+      description: "Include the command or screen, repository policy and station where applicable."
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: "Expected and observed behavior"
+      description: "Describe both outcomes and include a short redacted log excerpt if useful."
+    validations:
+      required: true

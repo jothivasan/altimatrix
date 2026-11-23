@@ -1,0 +1,81 @@
+{
+  "name": "altimatrix",
+  "version": "0.0.2",
+  "description": "A local software factory: watches your repositories, turns issues into reviewed draft pull requests.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jothivasan/altimatrix.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/jothivasan/altimatrix#readme",
+  "bugs": {
+    "url": "https://github.com/jothivasan/altimatrix/issues"
+  },
+  "keywords": [
+    "agent",
+    "acp",
+    "github",
+    "automation",
+    "pull-request",
+    "bun"
+  ],
+  "engines": {
+    "bun": ">=1.3.0",
+    "node": ">=20"
+  },
+  "type": "module",
+  "bin": "./bin/altimatrix.mjs",
+  "files": [
+    "bin",
+    "src",
+    "tsconfig.json",
+    "README.md"
+  ],
+  "exports": {
+    "./events": "./src/events/events.types.ts",
+    "./client": "./src/server/client.ts",
+    "./shared": "./src/shared/format.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "once": "bun run src/index.ts --once",
+    "run-issue": "bun run src/index.ts run",
+    "check": "concurrently --group --names biome,tsc,test,eval --prefix-colors auto \"biome check .\" \"bun run typecheck\" \"bun run test\" \"bun run eval\"",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./test/",
+    "eval": "bun test ./evals/",
+    "service": "bun run scripts/service.ts",
+    "e2e:gates": "bun run scripts/gate-e2e.ts",
+    "e2e:api": "bun run scripts/gate-api-e2e.ts",
+    "e2e": "bun run e2e:gates && bun run e2e:api && bun run e2e:cli",
+    "demo:seed": "bun run scripts/seed-gate-conversation.ts",
+    "demo:parked": "bun run scripts/parked-run-harness.ts",
+    "e2e:cli": "bun run scripts/gate-cli-e2e.ts",
+    "demo:triage": "bun run scripts/seed-dispatch.ts",
+    "probe:permissions": "bun run scripts/permission-probe.ts",
+    "e2e:review": "bun run scripts/review-e2e.ts",
+    "demo:thread": "bun run scripts/seed-work-thread.ts",
+    "demo:live": "bun run scripts/drive-live-step.ts"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.9.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "acpx": "^0.22.0",
+    "acpx-ai-provider": "^1.0.0",
+    "ai": "^7.0.177",
+    "chalk": "^6.0.1",
+    "cli-table3": "^0.6.5",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.19",
+    "log-symbols": "^7.0.1",
+    "terminal-link": "^5.0.0",
+    "xstate": "^5.33.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.5",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^7.0.2"
+  }
+}

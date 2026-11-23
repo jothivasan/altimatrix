@@ -1,0 +1,153 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "packages/core/src/index.ts",
+    "packages/core/scripts/service.ts",
+    "app/web/src/main.tsx",
+    "packages/core/test/**/*.ts",
+    "packages/core/evals/**/*.ts"
+  ],
+  "ignorePatterns": [
+    "**/*.d.ts",
+    "**/dist/**",
+    "**/target/**",
+    "**/node_modules/**",
+    "**/routeTree.gen.ts"
+  ],
+  "rules": {
+    "private-type-leaks": "warn",
+    "unused-class-members": "off",
+    "circular-dependencies": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/test/**", "**/evals/**", "**/*.config.ts"],
+      "rules": {
+        "unused-exports": "off",
+        "unused-files": "off"
+      }
+    },
+    {
+      "files": [
+        "app/web/src/components/motion/**",
+        "app/web/src/components/ui/**",
+        "app/web/src/routeTree.gen.ts",
+        "app/web/src/lib/ease.ts",
+        "app/web/src/lib/hooks/**",
+        "app/web/src/components/agents/**",
+        "app/web/src/lib/touch.ts"
+      ],
+      "rules": {
+        "unused-exports": "off",
+        "unused-files": "off",
+        "unused-types": "off",
+        "private-type-leaks": "off"
+      }
+    }
+  ],
+  "boundaries": {
+    "zones": [
+      {
+        "name": "core-lib",
+        "patterns": ["packages/core/src/lib/**"]
+      },
+      {
+        "name": "core-run",
+        "patterns": ["packages/core/src/run/**"]
+      },
+      {
+        "name": "core-watch",
+        "patterns": ["packages/core/src/watch/**"]
+      },
+      {
+        "name": "core-server",
+        "patterns": ["packages/core/src/server/**"]
+      },
+      {
+        "name": "ui-lib",
+        "patterns": ["app/web/src/lib/**"]
+      },
+      {
+        "name": "ui-modules",
+        "patterns": ["app/web/src/modules/**"]
+      },
+      {
+        "name": "ui-components",
+        "patterns": ["app/web/src/components/**"]
+      },
+      {
+        "name": "ui-screens",
+        "patterns": ["app/web/src/screens/**"]
+      },
+      {
+        "name": "ui-routes",
+        "patterns": ["app/web/src/routes/**"]
+      }
+    ],
+    "rules": [
+      {
+        "from": "core-lib",
+        "allow": ["core-lib"]
+      },
+      {
+        "from": "core-run",
+        "allow": ["core-run", "core-lib"]
+      },
+      {
+        "from": "core-watch",
+        "allow": ["core-watch", "core-run", "core-lib"]
+      },
+      {
+        "from": "core-server",
+        "allow": ["core-server", "core-run", "core-watch", "core-lib"]
+      },
+      {
+        "from": "ui-lib",
+        "allow": ["ui-lib"]
+      },
+      {
+        "from": "ui-modules",
+        "allow": ["ui-modules", "ui-lib", "core-server"]
+      },
+      {
+        "from": "ui-components",
+        "allow": ["ui-components", "ui-modules", "ui-lib"]
+      },
+      {
+        "from": "ui-screens",
+        "allow": ["ui-screens", "ui-components", "ui-modules", "ui-lib"]
+      },
+      {
+        "from": "ui-routes",
+        "allow": [
+          "ui-routes",
+          "ui-screens",
+          "ui-components",
+          "ui-modules",
+          "ui-lib"
+        ]
+      }
+    ]
+  },
+  "health": {
+    "maxCyclomatic": 15,
+    "maxCognitive": 65535,
+    "ignore": [
+      "**/dist/**",
+      "**/target/**",
+      "app/web/src/components/motion/**",
+      "app/web/src/components/ui/**",
+      "app/web/src/routeTree.gen.ts",
+      "app/web/src/components/agents/**"
+    ],
+    "maxUnitSize": 120,
+    "maxCrap": 240
+  },
+  "duplicates": {
+    "ignore": [
+      "app/web/src/components/motion/**",
+      "app/web/src/components/agents/**",
+      "app/web/src/components/ui/**"
+    ]
+  }
+}

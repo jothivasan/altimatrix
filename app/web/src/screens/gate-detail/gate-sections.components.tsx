@@ -1,0 +1,157 @@
+import type { GateRow } from 'altimatrix/shared'
+import { ErrorNote, Loading } from '@/components/state'
+import { DispatchDecisionPanel } from './dispatch-report.components'
+import { factsFromReport } from './dispatch-report.helpers'
+import {
+  Answered,
+  type Decision,
+  DecisionPanel,
+} from './gate-detail.components'
+import { Composer, Thread, type ThreadEntry } from './gate-thread.components'
+import { TrustDecisionPanel } from './trust.components'
+
+/**
+ * Who the words on this screen are about.
+ *
+ * A Dispatch gate and a plan gate ask different questions of different stations,
+ * and the difference is only ever these two words, so they are named once
+ * rather than branched on everywhere they appear.
+ */
+function voiceOf(kind: string): { subject: string; station: string } {
+  return kind === 'triage'
+    ? { subject: 'the report', station: 'Dispatch' }
+    : { subject: 'the plan', station: 'Blueprint' }
+}
+
+export function Discussion({
+  kind,
+  gateOpen,
+  thread,
+  reply,
+  onSend,
+}: {
+  kind: string
+  gateOpen: boolean
+  thread: {
+    isPending: boolean
+    isError: boolean
+    error: Error | null
+    data: { state: string; entries: readonly ThreadEntry[] } | undefined
+    refetch: () => void
+  }
+  reply: {
+    isPending: boolean
+    isSuccess: boolean
+    submittedAt: number
+    error: Error | null
+  }
+  onSend: (body: string) => void
+}) {
+  const voice = voiceOf(kind)
+  return (
+    <section
+      aria-label="Discussion"
+      className="dash-panel flex min-h-0 min-w-0 flex-1 @4xl:basis-1/2 flex-col gap-4"
+    >
+      <h2 className="directory-title">Discussion</h2>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {thread.isPending ? (
+          <Loading rows={2} />
+        ) : thread.isError ? (
+          <ErrorNote
+            message={thread.error?.message ?? ''}
+            onRetry={() => thread.refetch()}
+          />
+        ) : (
+          <Thread
+            answering={thread.data?.state === 'answering'}
+            entries={thread.data?.entries ?? []}
+            subject={voice.subject}
+          />
+        )}
+      </div>
+      {/*
+        Rendered whatever the gate's status, because the composer keeps the
+        draft when the gate is answered from somewhere else. It returns null
+        itself once there is nothing left to keep.
+      */}
+      <Composer
+        answering={thread.data?.state === 'answering'}
+        error={reply.error?.message}
+        gateOpen={gateOpen}
+        onSend={onSend}
+        pending={reply.isPending}
+        sentAt={reply.isSuccess ? reply.submittedAt : 0}
+        station={voice.station}
+      />
+    </section>
+  )
+}
+
+/** The decision to make, or the record of one already made. */
+export function Decide({
+  row,
+  artifact,
+  pending,
+  error,
+  onDecide,
+}: {
+  row: GateRow
+  artifact: string | null
+  pending: boolean
+  error: string | undefined
+  onDecide: (decision: Decision, reason: string) => void
+}) {
+  if (row.status !== 'open') {
+    return <Answered gate={row} />
+  }
+  if (row.kind === 'trust') {
+    // Its own panel, because the shared one offers asking for changes and this
+    // kind accepts only two answers. Offering the third would put an action on
+    // screen that comes back as an error.
+    return (
+      <TrustDecisionPanel
+        error={error}
+        // Only what the gate actually recorded. Inventing an author list to
+        // fill a field would put a name on screen that nothing established.
+        facts={{
+          because:
+            row.summary ??
+            'code here was written by somebody this repository does not know',
+        }}
+        onDecide={onDecide}
+        pending={pending}
+      />
+    )
+  }
+  if (row.kind === 'triage') {
+    const facts = factsFromReport(artifact)
+    if (facts === undefined) {
+      return (
+        <p
+          className="rounded-xl border border-border border-dashed bg-card/40 p-4 text-[13px] text-muted-foreground"
+          data-testid="triage-unreadable"
+        >
+          This report could not be read, so there is nothing to approve. Nothing
+          has been sent, and the gate is still open.
+        </p>
+      )
+    }
+    return (
+      <DispatchDecisionPanel
+        error={error}
+        facts={facts}
+        onDecide={onDecide}
+        pending={pending}
+      />
+    )
+  }
+  return (
+    <DecisionPanel
+      error={error}
+      gate={row}
+      onDecide={onDecide}
+      pending={pending}
+    />
+  )
+}

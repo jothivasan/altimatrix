@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 838 258" width="838" height="258" fill="none" role="img" aria-label="Altimatrix">
+  <g transform="translate(38 38)">
+    <rect width="182" height="182" rx="36" fill="#111110"/>
+    <g transform="translate(0, 0) scale(0.35546875)">
+      
+  <g id="altimatrix-mark">
+    <!-- Peak Altitude Chevron -->
+    <polygon points="256,96 340,180 256,226 172,180" fill="#FBFBF9"/>
+    <!-- Left Mid Facet -->
+    <polygon points="160,192 244,238 160,324 76,278" fill="#94A3B8"/>
+    <!-- Right Mid Facet -->
+    <polygon points="352,192 436,278 352,324 268,238" fill="#94A3B8"/>
+    <!-- Center Matrix Node -->
+    <polygon points="256,250 324,306 256,362 188,306" fill="#FBFBF9"/>
+    <!-- Lower Base Left -->
+    <polygon points="68,290 152,336 68,422 -16,376" fill="#64748B"/>
+    <!-- Lower Base Center-Left -->
+    <polygon points="176,336 244,380 176,436 108,392" fill="#94A3B8"/>
+    <!-- Lower Base Center-Right -->
+    <polygon points="336,336 404,392 336,436 268,380" fill="#94A3B8"/>
+    <!-- Lower Base Right -->
+    <polygon points="444,290 528,376 444,422 360,336" fill="#64748B"/>
+  </g>
+
+    </g>
+  </g>
+  <g transform="translate(254 135)">
+    <text font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="74" font-weight="800" letter-spacing="-1.5" fill="#111110">Altimatrix</text>
+    <text y="42" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="600" letter-spacing="4" fill="#71717A">SOFTWARE FACTORY</text>
+  </g>
+</svg>
