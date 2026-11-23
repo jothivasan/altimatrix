@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    // "bun" is here because the RPC client type-imports AppType from the
+    // factory, and TypeScript must then check that file's transitive imports,
+    // which touch Bun globals. The cost is that Bun APIs also typecheck inside
+    // UI code; the alternative is mirroring the contract by hand, which is the
+    // drift this import exists to prevent.
+    "types": ["vite/client", "bun"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "paths": {
+      "@/*": ["./src/*", "../../packages/core/src/*"],
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
+      "react-dom": ["./node_modules/@types/react-dom"]
+    }
+  },
+  // The factory's ambient declarations come along for the same reason its Bun
+  // globals do: the RPC client type-imports AppType, so this project ends up
+  // checking the factory's own files, including its `.sql` text imports.
+  "include": ["src", "../../packages/core/src/types"]
+}

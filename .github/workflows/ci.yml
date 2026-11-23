@@ -1,0 +1,57 @@
+# Pull requests wait for the ci-approval environment before running checks.
+# Configure required reviewers in the repository's environment settings.
+
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    # PR-only gate. On push to main the merge itself is the review, so
+    # this job is skipped and the check job runs via its `if:` guard.
+    if: github.event_name == 'pull_request'
+    name: Wait for manual approval
+    runs-on: ubuntu-latest
+    environment: ci-approval
+    timeout-minutes: 60
+    steps:
+      - name: Approved
+        run: echo "CI approved by ${{ github.actor }}"
+
+  check:
+    name: Check
+    needs: approve
+    if: always() && (needs.approve.result == 'success' || needs.approve.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # fallow's health hotspots rank files by git churn, which needs
+          # real history. The default shallow clone reports none.
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: bun install
+        run: bun install --frozen-lockfile
+
+      - name: bun run check
+        run: bun run check

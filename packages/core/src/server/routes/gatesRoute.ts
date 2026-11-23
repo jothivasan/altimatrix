@@ -1,0 +1,125 @@
+import { zValidator } from '@hono/zod-validator'
+import { Hono } from 'hono'
+import { z } from 'zod'
+import { GATE_DECISIONS, GATE_STATUSES } from '@/modules/db/schema/schema'
+import {
+  ANSWER_SOURCES,
+  answerGate,
+  listGates,
+  readGate,
+  readThread,
+  replyToGate,
+} from '@/modules/gates'
+import { readArtifact } from '@/modules/work/artifacts'
+import { openState } from '@/watch/state'
+
+const answerSchema = z.object({
+  decision: z.enum(GATE_DECISIONS),
+  reason: z.string().max(4000).optional(),
+  answeredBy: z.string().min(1).max(200),
+  answeredOn: z.enum(ANSWER_SOURCES).default('app'),
+})
+
+const replySchema = z.object({
+  // Trimmed before the length check, because the writer trims too: a body of
+  // spaces passed `min(1)` and then became an empty question nobody could read
+  // and Blueprint still had to spend a turn on.
+  body: z
+    .string()
+    .max(8000)
+    .transform((value) => value.trim())
+    .refine((value) => value.length > 0, 'a reply cannot be empty'),
+  // One line. The author is written into a line oriented sentinel, so a newline
+  // in it splits the entry and makes the whole conversation unparsable.
+  author: z
+    .string()
+    .max(200)
+    .transform((value) => value.trim())
+    .refine(
+      (value) => value.length > 0 && !/[\r\n]/.test(value),
+      'an author must be one line',
+    ),
+})
+
+const listSchema = z.object({
+  status: z.enum(GATE_STATUSES).default('open'),
+  runId: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+})
+
+/**
+ * The gate surface.
+ *
+ * Every handler is async and every body goes through a validator, so the
+ * client's `InferRequestType` describes the payload rather than leaving the UI
+ * to redeclare it and drift.
+ */
+export const gatesRoute = new Hono()
+  .get('/gates', zValidator('query', listSchema), async (c) => {
+    const { status, runId, limit } = c.req.valid('query')
+    const db = openState()
+    const gates = listGates(db, {
+      status,
+      ...(runId === undefined ? {} : { runId }),
+      ...(limit === undefined ? {} : { limit }),
+    })
+    db.close()
+    return c.json({ gates })
+  })
+  .get('/gates/:id', async (c) => {
+    const db = openState()
+    const gate = readGate(db, c.req.param('id'))
+    db.close()
+    if (gate === undefined) {
+      return c.json({ error: 'no such gate' }, 404)
+    }
+    const artifact =
+      gate.artifactPath === null
+        ? undefined
+        : await readArtifact(gate.artifactPath)
+    return c.json({ gate, artifact: artifact ?? null })
+  })
+  .get('/gates/:id/thread', async (c) => {
+    const db = openState()
+    const thread = await readThread(db, c.req.param('id'))
+    db.close()
+    if (thread === undefined) {
+      return c.json({ error: 'no such gate' }, 404)
+    }
+    return c.json(thread)
+  })
+  .post('/gates/:id/reply', zValidator('json', replySchema), async (c) => {
+    const body = c.req.valid('json')
+    const db = openState()
+    const result = await replyToGate(db, {
+      gateId: c.req.param('id'),
+      body: body.body,
+      author: body.author,
+    })
+    db.close()
+    if (result.ok) {
+      return c.json(result)
+    }
+    // Same reasoning as answering: a refusal is an outcome. 409 for a gate that
+    // moved under the reply, so a client can put the text back in the box.
+    return c.json(result, result.refusal.kind === 'not_found' ? 404 : 409)
+  })
+  .post('/gates/:id/answer', zValidator('json', answerSchema), async (c) => {
+    const body = c.req.valid('json')
+    const db = openState()
+    const result = answerGate(db, {
+      gateId: c.req.param('id'),
+      decision: body.decision,
+      ...(body.reason === undefined ? {} : { reason: body.reason }),
+      answeredBy: body.answeredBy,
+      answeredOn: body.answeredOn,
+    })
+    db.close()
+    if (result.ok) {
+      return c.json(result)
+    }
+    // A refusal is an ordinary outcome, not a server fault: three surfaces can
+    // answer the same gate and two of them racing is expected. 409 so a client
+    // can tell it apart from a bad request without parsing prose.
+    return c.json(result, result.refusal.kind === 'not_found' ? 404 : 409)
+  })

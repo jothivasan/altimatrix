@@ -1,0 +1,94 @@
+import type { Config } from '@/config'
+import { emit } from '@/events/bus'
+import type { GhIssue } from '@/lib/gh'
+import { logger } from '@/lib/log'
+import { getDb } from '@/modules/db/db'
+import type { RunPolicy } from '@/modules/settings/domains'
+import type { RunRef } from '@/modules/work/paths'
+import type { DispatchOutcome } from '@/run/machines/dispatchTypes'
+import { driveDispatch } from '@/run/machines/driveDispatch'
+import type { PipelineResult } from '@/run/pipeline'
+import { dispatchFirst } from '@/run/policy'
+import type { Workspace } from '@/run/workspace'
+
+const log = logger('dispatch')
+
+/**
+ * Classifies first when the repository asks for it, and says so if that settled
+ * the issue.
+ *
+ * Returns nothing when the work should carry on, which is the only case that
+ * reaches a station that writes code.
+ */
+export async function dispatchIfAsked(input: {
+  runId: string
+  repo: string
+  issue: GhIssue
+  run: RunRef
+  config: Config
+  workspace: Workspace
+  conventionFiles: readonly string[]
+  snapshot?: unknown
+  /** Resolved by the caller, so one run goes by one answer throughout. */
+  policy: RunPolicy
+}): Promise<PipelineResult | undefined> {
+  // A run that is already in triage stays in triage, whatever the policy says
+  // now. Policy decides what a new run does; it must not decide what an
+  // existing one is, or changing it would step over an unanswered gate and
+  // start writing code, and changing it back would insert a fresh triage in
+  // front of a machine that is already past it.
+  const resuming = input.snapshot !== undefined
+  if (!resuming && !dispatchFirst(input.policy)) {
+    return undefined
+  }
+  const triaged = await driveDispatch({
+    runId: input.runId,
+    repo: input.repo,
+    issueNumber: input.issue.number,
+    run: input.run,
+    ...(input.snapshot === undefined ? {} : { snapshot: input.snapshot }),
+    deps: {
+      db: getDb().sqlite,
+      config: input.config,
+      issue: input.issue,
+      repo: input.repo,
+      workspace: input.workspace,
+      run: input.run,
+      conventionFiles: input.conventionFiles,
+    },
+  })
+  if (triaged.outcome.kind === 'handOff') {
+    log.info('Dispatch approved for planning', {
+      runId: input.runId,
+      classification: triaged.outcome.triage.classification,
+    })
+    return undefined
+  }
+  return reportTriaged(input.runId, triaged.outcome)
+}
+
+function reasonFor(outcome: DispatchOutcome): string {
+  switch (outcome.kind) {
+    case 'escalated':
+      return 'a security report, escalated privately and not answered in public'
+    case 'stale':
+      return 'closed after the reporter never came back'
+    case 'answered':
+      return `triaged and answered (${outcome.decision})`
+    default:
+      return 'triaged'
+  }
+}
+
+function reportTriaged(
+  runId: string,
+  outcome: DispatchOutcome,
+): PipelineResult {
+  if (outcome.kind === 'failed') {
+    emit({ type: 'run.failed', runId, error: outcome.error, at: Date.now() })
+    return { status: 'failed', error: outcome.error }
+  }
+  const reason = reasonFor(outcome)
+  emit({ type: 'run.stopped', runId, reason, at: Date.now() })
+  return { status: 'skipped' }
+}

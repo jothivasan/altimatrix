@@ -1,0 +1,295 @@
+import { logger } from '@/lib/log'
+/**
+ * The little of an issue an artifact's heading needs.
+ *
+ * Narrower than GhIssue on purpose: a tool call knows the subject it is
+ * writing for without having fetched the issue again, and GhIssue satisfies
+ * this structurally so every existing caller is unchanged.
+ */
+export interface SubjectHeading {
+  readonly number: number
+  readonly title: string
+}
+
+import { type ArtifactRef, writeArtifact } from '@/modules/work/artifacts'
+import type { RunRef, Subject } from '@/modules/work/paths'
+import { writeJson } from '@/modules/work/store'
+import type { PipelineResult } from '@/run/pipeline'
+import type { Analysis, Review, Triage } from '@/run/workflowStages/schemas'
+
+/**
+ * Turning what a station decided into the files the brain later reads.
+ *
+ * The markdown is the artifact a person or an agent reads; the JSON beside it
+ * under the run is the machine's copy. Which run produced an artifact is the
+ * one fact not derivable from its path, so it travels in the frontmatter with
+ * the content rather than in a row that could drift from it.
+ */
+
+/**
+ * Writes an artifact, and carries on if it cannot.
+ *
+ * A run that produced a pull request has done its job, and a full disk under
+ * the work directory is not a reason to throw that away. The failure is logged
+ * loudly rather than swallowed quietly.
+ */
+export async function recordBestEffort(
+  what: string,
+  write: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await write()
+  } catch (error) {
+    logger('pipeline').error('could not write artifacts', {
+      what,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+function frontmatter(fields: Record<string, string>): string {
+  const lines = Object.entries(fields).map(([key, value]) => `${key}: ${value}`)
+  return `---\n${lines.join('\n')}\n---\n`
+}
+
+function bullets(items: readonly string[]): string {
+  return items.map((item) => `- ${item}`).join('\n')
+}
+
+function numbered(items: readonly string[]): string {
+  return items.map((item, index) => `${index + 1}. ${item}`).join('\n')
+}
+
+function planMarkdown(
+  issue: SubjectHeading,
+  analysis: Analysis,
+  runId: string,
+): string {
+  return `${frontmatter({
+    kind: 'plan',
+    run: runId,
+    issue: String(issue.number),
+    created: new Date().toISOString(),
+  })}
+# Plan for #${issue.number}: ${issue.title}
+
+## Problem
+
+${analysis.problem_statement}
+
+## Approach
+
+${analysis.approach}
+
+## Steps
+
+${numbered(analysis.plan)}
+
+## Affected surface
+
+${bullets(analysis.affected_surface)}
+
+## Risks
+
+${bullets(analysis.risks)}
+
+## Test strategy
+
+${analysis.test_strategy}
+`
+}
+
+function criteriaMarkdown(
+  issue: SubjectHeading,
+  analysis: Analysis,
+  runId: string,
+): string {
+  return `${frontmatter({
+    kind: 'criteria',
+    run: runId,
+    issue: String(issue.number),
+    created: new Date().toISOString(),
+  })}
+# Acceptance criteria for #${issue.number}
+
+Written before any code exists, and handed to Inspection verbatim.
+
+${analysis.acceptance_criteria.map((c) => `- [ ] ${c}`).join('\n')}
+`
+}
+
+function reviewMarkdown(
+  issue: SubjectHeading,
+  review: Review,
+  runId: string,
+): string {
+  const results = review.criteria_results
+    .map(
+      (result) =>
+        `### ${result.pass ? 'Met' : 'Not met'}: ${result.criterion}\n\n${result.evidence}`,
+    )
+    .join('\n\n')
+  const findings =
+    review.blocking_findings.length === 0
+      ? '_None._'
+      : bullets(review.blocking_findings)
+
+  return `${frontmatter({
+    kind: 'review',
+    run: runId,
+    issue: String(issue.number),
+    verdict: review.verdict,
+    created: new Date().toISOString(),
+  })}
+# Review of #${issue.number}
+
+**Verdict:** ${review.verdict}
+
+${review.summary}
+
+## Criteria
+
+${results}
+
+## Blocking findings
+
+${findings}
+`
+}
+
+/** The plan and the criteria, versioned, plus Blueprint's structured output. */
+export async function recordAnalysis(
+  subject: Subject,
+  run: RunRef,
+  issue: SubjectHeading,
+  analysis: Analysis,
+): Promise<{ plan: ArtifactRef; criteria: ArtifactRef }> {
+  const plan = await writeArtifact(
+    subject,
+    'plan',
+    planMarkdown(issue, analysis, run.runId),
+  )
+  const criteria = await writeArtifact(
+    subject,
+    'criteria',
+    criteriaMarkdown(issue, analysis, run.runId),
+  )
+  await writeJson(run, 'analysis', analysis)
+  return { plan, criteria }
+}
+
+export async function recordReview(
+  subject: Subject,
+  run: RunRef,
+  issue: SubjectHeading,
+  review: Review,
+): Promise<{ review: ArtifactRef }> {
+  const written = await writeArtifact(
+    subject,
+    'review',
+    reviewMarkdown(issue, review, run.runId),
+  )
+  await writeJson(run, 'review', review)
+  return { review: written }
+}
+
+export interface RunSnapshot {
+  readonly runId: string
+  readonly repo: string
+  readonly issue: number
+  readonly status: string
+  readonly branch?: string
+  readonly prUrl?: string
+  readonly error?: string
+  readonly finishedAt: string
+}
+
+export function snapshotOf(
+  runId: string,
+  repo: string,
+  issue: number,
+  result: PipelineResult,
+): RunSnapshot {
+  return {
+    runId,
+    repo,
+    issue,
+    status: result.status,
+    ...(result.branch === undefined ? {} : { branch: result.branch }),
+    ...(result.prUrl === undefined ? {} : { prUrl: result.prUrl }),
+    ...(result.error === undefined ? {} : { error: result.error }),
+    finishedAt: new Date().toISOString(),
+  }
+}
+
+export async function recordRun(
+  run: RunRef,
+  snapshot: RunSnapshot,
+): Promise<void> {
+  await writeJson(run, 'run', snapshot)
+}
+
+function triageMarkdown(
+  issue: SubjectHeading,
+  triage: Triage,
+  runId: string,
+): string {
+  const surface =
+    triage.affected_surface.length === 0
+      ? '_Not established._'
+      : bullets(triage.affected_surface)
+  const missing =
+    triage.missing.length === 0 ? '_Nothing._' : bullets(triage.missing)
+  const duplicate =
+    triage.duplicate_of === undefined
+      ? ''
+      : `\n**Duplicates:** #${triage.duplicate_of}\n`
+  const reply =
+    triage.reply === undefined
+      ? ''
+      : `\n## Drafted reply\n\nNot posted. A person releases this.\n\n${triage.reply}\n`
+
+  return `${frontmatter({
+    kind: 'triage',
+    run: runId,
+    issue: String(issue.number),
+    classification: triage.classification,
+    confidence: triage.confidence,
+    created: new Date().toISOString(),
+  })}
+# Dispatch report for #${issue.number}
+
+**Classification:** ${triage.classification}
+**Confidence:** ${triage.confidence}
+${duplicate}
+${triage.summary}
+
+## Reasoning
+
+${triage.reasoning}
+
+## Would touch
+
+${surface}
+
+## Missing
+
+${missing}
+${reply}`
+}
+
+/** The Dispatch report, versioned, plus Dispatch's structured output. */
+export async function recordTriage(
+  subject: Subject,
+  run: RunRef,
+  issue: SubjectHeading,
+  triage: Triage,
+): Promise<ArtifactRef> {
+  const report = await writeArtifact(
+    subject,
+    'triage',
+    triageMarkdown(issue, triage, run.runId),
+  )
+  await writeJson(run, 'triage', triage)
+  return report
+}

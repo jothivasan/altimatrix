@@ -1,0 +1,27 @@
+name: Documentation improvement
+description: Identify a missing, confusing or incorrect instruction.
+body:
+  - type: markdown
+    attributes:
+      value: "For a security finding, follow SECURITY.md. Remove tokens and private repository content from examples."
+  - type: textarea
+    id: location
+    attributes:
+      label: "Page and section"
+      description: "Link the page or name the file and heading."
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Where did you get stuck?"
+      description: "Include the command, working directory or wording if relevant."
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: "Suggested improvement"
+      description: "Describe the correction or the question the guide should answer."
+    validations:
+      required: false

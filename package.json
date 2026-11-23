@@ -1,0 +1,36 @@
+{
+  "name": "altimatrix-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "app/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "bun run --filter 'altimatrix' start",
+    "once": "bun run --filter 'altimatrix' once",
+    "service": "bun run --filter 'altimatrix' service",
+    "dev": "bun run dev:web",
+    "check": "concurrently --group --names biome,tsc:core,tsc:web,test,eval,fallow --prefix-colors auto \"bun run check:biome\" \"bun run check:tsc:core\" \"bun run check:tsc:web\" \"bun run check:test\" \"bun run check:eval\" \"bun run check:fallow\"",
+    "check:biome": "biome check",
+    "check:tsc:core": "bun run --filter altimatrix typecheck",
+    "check:tsc:web": "bun run --filter altimatrix-web typecheck",
+    "check:test": "bun run --filter altimatrix test",
+    "check:eval": "bun run --filter altimatrix eval",
+    "check:fallow": "fallow",
+    "check:fix": "biome check --write",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun run --filter altimatrix test",
+    "eval": "bun run --filter altimatrix eval",
+    "dev:web": "bun scripts/dev-web.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@types/bun": "^1.4.5",
+    "concurrently": "^10",
+    "fallow": "^3.30.0",
+    "typescript": "^7.0.2"
+  }
+}

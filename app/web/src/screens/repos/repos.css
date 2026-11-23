@@ -1,0 +1,220 @@
+.repo-directory {
+  container-type: inline-size;
+  display: grid;
+  gap: 24px;
+}
+.repo-collection,
+.repo-policy-list {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.repo-collection {
+  overflow: hidden;
+}
+.repo-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px 24px;
+}
+.repo-toolbar h1,
+.repo-invite h2,
+.repo-policy-section h2,
+.repo-policy-list dt {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+.repo-toolbar h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+}
+.repo-count {
+  border-radius: 6px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font: 500 13px / 24px var(--font-sans);
+  min-width: 25px;
+  text-align: center;
+}
+.repo-onboarding {
+  isolation: isolate;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(26px, 4.5cqi, 56px);
+  background: #174c40;
+  color: white;
+}
+.repo-onboarding::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(#ffffff30 1px, transparent 1px);
+  background-size: 15px 15px;
+  mask-image: linear-gradient(90deg, transparent 20%, black);
+}
+.repo-invite {
+  max-width: 490px;
+}
+.repo-invite h2 {
+  font-size: clamp(28px, 3.4cqi, 42px);
+  line-height: 1.12;
+}
+.repo-invite p {
+  max-width: 48ch;
+  margin: 12px 0 22px;
+  color: #d8e8df;
+  line-height: 1.55;
+}
+.repo-add {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: 9px;
+  padding: 0 16px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.repo-invite .repo-add {
+  background: #d6f3bc;
+  color: #193e31;
+}
+.repo-add:hover {
+  filter: brightness(0.94);
+}
+.repo-illustration {
+  flex: 0 0 clamp(190px, 24cqi, 290px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d6f3bc;
+}
+.repo-source,
+.repo-events span {
+  border: 1px solid #9ab9a1;
+  background: #225848;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+}
+.repo-source {
+  height: 74px;
+  width: 74px;
+  box-shadow: 0 0 0 6px #ffffff0a;
+}
+.repo-wire {
+  width: 35px;
+  height: 1px;
+  background: #9ab9a1;
+}
+.repo-events {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  padding-left: 24px;
+}
+.repo-events::before {
+  content: "";
+  position: absolute;
+  inset: 22px auto 22px 0;
+  width: 24px;
+  border: 1px solid #9ab9a1;
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+}
+.repo-events span {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+}
+.repo-events svg {
+  width: 20px;
+}
+.repo-policy-section h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+.repo-policy-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 20px 0;
+}
+.repo-policy-list > div {
+  padding: 0 22px;
+}
+.repo-policy-list > div + div {
+  border-left: 1px solid var(--border);
+}
+.repo-policy-list dt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+}
+.repo-policy-list dt span {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  width: 32px;
+  height: 32px;
+}
+.repo-policy-list dd {
+  margin-top: 9px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+.repo-policy-list dd::first-letter {
+  text-transform: uppercase;
+}
+.repo-entry {
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 24px;
+}
+@container (max-width: 760px) {
+  .repo-entry {
+    align-items: start;
+    flex-direction: column;
+  }
+}
+@container (max-width: 590px) {
+  .repo-illustration {
+    display: none;
+  }
+  .repo-policy-list {
+    grid-template-columns: 1fr;
+    padding: 0 18px;
+  }
+  .repo-policy-list > div {
+    padding: 15px 0;
+  }
+  .repo-policy-list > div + div {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  .repo-policy-list dd {
+    margin-left: 42px;
+    margin-top: 0;
+  }
+  .repo-toolbar,
+  .repo-entry {
+    padding: 16px;
+  }
+}
